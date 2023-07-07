@@ -1,6 +1,7 @@
 import os
 import json
 import warnings
+import numpy
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Optional, Tuple
 from glue.core.link_helpers import LinkSame
@@ -26,6 +27,17 @@ if TYPE_CHECKING:
     from .glue_ydoc import YGlue
 
 warnings.filterwarnings("ignore")
+
+
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, numpy.integer):
+            return int(obj)
+        if isinstance(obj, numpy.floating):
+            return float(obj)
+        if isinstance(obj, numpy.ndarray):
+            return obj.tolist()
+        return super(NpEncoder, self).default(obj)
 
 
 class SharedGlueSession:
@@ -400,6 +412,60 @@ class SharedGlueSession:
 
         self._data[data.label] = data
         self._document.set(json.dumps(contents))
+
+    def add_viewer(
+        self, tab: str,
+        data: str,
+        type: str,
+        pos: tuple[int, int],
+        size: tuple[int, int]
+    ) -> None:
+    # def add_viewer(self, tab: str, data: str, type: str) -> None:
+
+        data = self._data[data]
+
+        # Serializer context with previous viewers
+        serializer = GlueSerializer(self.app.viewers)
+        serializer.dumpo()
+
+        # Add the viewer to the app
+        if type == "1D Histogram":
+            viewer = self.app.histogram1d(data=data)
+
+        # Serialize the new viewer in the context of the previous viewers
+        # (this avoid conflicts in IDs)
+        viewer_serializer = GlueSerializer(viewer)
+        viewer_serializer.dumpo()
+
+        serialized_data = [
+            (serializer.id(obj), serializer.do(obj))
+            for oid, obj in list(viewer_serializer._objs.items())
+        ]
+        serialized_data = dict(serialized_data)
+
+        # Appends the new serialized objects to the content
+        contents = self._document.contents
+        viewer_id = ""
+        viewer_class_name = f"{viewer.__class__.__module__}.{viewer.__class__.__name__}"
+        for key, value in serialized_data.items():
+            if key not in contents.keys():
+                contents[key] = value
+            try:
+                if value["_type"] == viewer_class_name:
+                    viewer_id = key
+                    contents[key]['pos'] = pos
+                    contents[key]['size'] = size
+            except Exception:
+                pass
+
+        tab_idx = contents.get("__main__", {}).get("tab_names", []).index(tab)
+        tab_viewers = contents.get("__main__", {}).get("viewers", [])[tab_idx]
+        tab_viewers.append(viewer_id)
+
+        self._viewers[tab][viewer_id] = viewer
+        # self._document.set(json.dumps(contents))
+
+        self._document.set(json.dumps(contents, cls=NpEncoder))
 
     def _load_data(self) -> None:
         """Load data defined in the glue session"""

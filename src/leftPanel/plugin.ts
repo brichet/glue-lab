@@ -24,8 +24,9 @@ function addCommands(
   commands.addCommand(CommandIDs.new1DHistogram, {
     label: '1D Histogram',
     iconClass: 'fa fa-chart-bar',
-    execute: (args?: INewViewerArgs) => {
+    execute: async (args?: INewViewerArgs) => {
       if (!controlModel.sharedModel) {
+        console.error('no shared model');
         return;
       }
 
@@ -34,20 +35,39 @@ function addCommands(
       const layer = args?.dataset || controlModel.selectedDataset;
 
       if (focusedTab === 0) {
+        console.error('no tab');
         return;
       }
 
-      controlModel.sharedModel.setTabItem(tabs[focusedTab - 1], UUID.uuid4(), {
-        _type: 'glue.viewers.histogram.qt.data_viewer.HistogramViewer',
-        pos: args?.position || [0, 0],
-        session: 'Session',
-        size: args?.size || [600, 400],
-        state: {
-          values: {
-            layer
-          }
-        }
-      });
+      const kernel = controlModel.currentSessionKernel();
+      if (kernel === undefined) {
+        console.error('no kernel');
+        // TODO Show an error dialog
+        return;
+      }
+      const code =
+        'GLUE_SESSION.add_viewer(' +
+        `"${tabs[focusedTab - 1]}", ` +
+        `"${layer}", ` +
+        '"1D Histogram", ' +
+        `${args?.position || [0, 0]}, ` +
+        `${args?.size || [600, 400]})`;
+
+      console.log('EXECUTE', code);
+      const future = kernel.requestExecute({ code }, false);
+      await future.done;
+
+      // controlModel.sharedModel.setTabItem(tabs[focusedTab - 1], UUID.uuid4(), {
+      //   _type: 'glue.viewers.histogram.qt.data_viewer.HistogramViewer',
+      //   pos: args?.position || [0, 0],
+      //   session: 'Session',
+      //   size: args?.size || [600, 400],
+      //   state: {
+      //     values: {
+      //       layer
+      //     }
+      //   }
+      // });
     }
   });
 
